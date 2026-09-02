@@ -9,35 +9,43 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT, "text": msg, "parse_mode": "Markdown"}, timeout=20)
 
 try:
-    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=20&apikey={TD_KEY}"
+    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=5&apikey={TD_KEY}"
     r = requests.get(url, timeout=20).json()
     if "values" not in r:
-        send(f"❌ TwelveData Error: {r}")
-        exit(0)
+        send(f"❌ API Error: {r}"); exit(0)
 
     candles = r["values"][::-1]
-    last = candles[-2]
-    
-    open_p = float(last["open"])
-    high = float(last["high"])
-    low = float(last["low"])
-    close = float(last["close"])
-    
-    body = abs(close - open_p)
-    upper_wick = high - max(open_p, close)
-    lower_wick = min(open_p, close) - low
-    
-    wickless_buy = lower_wick < (body * 0.3) and close > open_p
-    wickless_sell = upper_wick < (body * 0.3) and close < open_p
-    
-    time_now = datetime.datetime.utcnow().strftime("%H:%M UTC")
-    
-    if wickless_buy:
-        send(f"🟢 *WICKLESS BUY* XAU/USD\nTime: {time_now}\nPrice: {close}\nStrong bullish wickless candle!")
-    elif wickless_sell:
-        send(f"🔴 *WICKLESS SELL* XAU/USD\nTime: {time_now}\nPrice: {close}\nStrong bearish wickless candle!")
+    last_closed = candles[-2]
+
+    o = float(last_closed["open"])
+    h = float(last_closed["high"])
+    l = float(last_closed["low"])
+    c = float(last_closed["close"])
+    td_time_str = last_closed["datetime"]
+
+    body = abs(c - o)
+    if body < 0.05: body = 0.05
+    upper = h - max(o,c)
+    lower = min(o,c) - l
+    upper_pct = (upper/body)*100
+    lower_pct = (lower/body)*100
+
+    # STRICT Exness wickless
+    buy_wickless = lower_pct < 10 and c > o
+    sell_wickless = upper_pct < 10 and c < o
+
+    utc_dt = datetime.datetime.strptime(td_time_str, "%Y-%m-%d %H:%M:%S")
+    exness_time = utc_dt.strftime("%H:%M") # Exness = GMT+0 = UTC
+    sa_time = (utc_dt + datetime.timedelta(hours=2)).strftime("%H:%M SAST")
+
+    details = f"Exness {exness_time} | SA {sa_time}\nO:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f}\nUp:{upper_pct:.1f}% Low:{lower_pct:.1f}%"
+
+    if buy_wickless:
+        send(f"🟢 *WICKLESS BUY - EXNESS*\n{details}\nPrice: {c}")
+    elif sell_wickless:
+        send(f"🔴 *WICKLESS SELL - EXNESS*\n{details}\nPrice: {c}")
     else:
-        send(f"⏳ XAU Check {time_now}\nPrice: {close}\nNo wickless signal yet - bot monitoring every 5min.")
-        
+        send(f"⏳ No wickless\n{details}")
+
 except Exception as e:
-    send(f"⚠️ Error: {str(e)}")
+    send(f"⚠️ {e}")
