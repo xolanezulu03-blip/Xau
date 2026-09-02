@@ -1,52 +1,35 @@
-import os
-import requests
-import yfinance as yf
+import os, requests, yfinance as yf
 from datetime import timedelta, timezone
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT = os.getenv("CHAT_ID")
 
-def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT, "text": msg, "parse_mode": "Markdown"}, timeout=20)
+def send(m):
+    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": m, "parse_mode": "Markdown"}, timeout=20)
 
 try:
-    data = yf.download("GC=F", period="2d", interval="5m", auto_adjust=True, progress=False)
-    if data.empty or len(data) < 3:
-        send("❌ Yahoo empty")
-        exit(0)
+    df = yf.download("GC=F", period="2d", interval="5m", auto_adjust=True, progress=False)
+    last = df.iloc[-2]
+    t = df.index[-2]
+    
+    o, h, l, c = float(last["Open"]), float(last["High"]), float(last["Low"]), float(last["Close"])
+    body = max(abs(c-o), 0.05)
+    up = h - max(o,c)
+    low = min(o,c) - l
+    up_pct = up/body*100
+    low_pct = low/body*100
 
-    last = data.iloc[-2]
-    prev_time = data.index[-2]
+    utc = t.to_pydatetime().replace(tzinfo=timezone.utc)
+    ex = utc.strftime("%H:%M Exness")
+    sa = (utc + timedelta(hours=2)).strftime("%H:%M SAST (%Y-%m-%d)")
+    
+    info = f"{sa} | {ex}\nO:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f}\nUp:{up_pct:.1f}% Low:{low_pct:.1f}%"
 
-    o = float(last["Open"])
-    h = float(last["High"])
-    l = float(last["Low"])
-    c = float(last["Close"])
-
-    body = abs(c - o)
-    if body < 0.05:
-        body = 0.05
-    upper = h - max(o, c)
-    lower = min(o, c) - l
-    up_pct = (upper / body) * 100
-    low_pct = (lower / body) * 100
-
-    buy = low_pct < 10 and c > o
-    sell = up_pct < 10 and c < o
-
-    utc_dt = prev_time.to_pydatetime().replace(tzinfo=timezone.utc)
-    exness = utc_dt.strftime("%Y-%m-%d %H:%M Exness")
-    sa = (utc_dt + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M SAST")
-
-    det = f"{exness}\n{sa}\nO:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f}\nUp:{up_pct:.1f}% Low:{low_pct:.1f}%"
-
-    if buy:
-        send(f"🟢 *WICKLESS BUY LIVE*\n{det}")
-    elif sell:
-        send(f"🔴 *WICKLESS SELL LIVE*\n{det}")
+    if low_pct < 10 and c > o:
+        send(f"🟢 *BUY WICKLESS LIVE*\n{info}")
+    elif up_pct < 10 and c < o:
+        send(f"🔴 *SELL WICKLESS LIVE*\n{info}")
     else:
-        send(f"⏳ No wickless\n{det}")
-
+        send(f"⏳ No signal\n{info}")
 except Exception as e:
     send(f"⚠️ {e}")
