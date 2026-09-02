@@ -1,4 +1,6 @@
-    import os, requests, yfinance as yf
+import os
+import requests
+import yfinance as yf
 from datetime import datetime, timedelta, timezone
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -9,15 +11,14 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT, "text": msg, "parse_mode": "Markdown"}, timeout=20)
 
 try:
-    # Get REAL-TIME XAUUSD M5 from Yahoo (same as Exness)
     data = yf.download("GC=F", period="2d", interval="5m", auto_adjust=True)
-    # GC=F = Gold Futures = exactly XAUUSD
     if data.empty:
-        send("❌ Yahoo empty"); exit(0)
+        send("❌ Yahoo empty")
+        exit(0)
 
-    data = data.tail(10) # last 10 candles
-    last = data.iloc[-2] # last closed
-    prev_close_time = data.index[-2] # UTC time
+    data = data.tail(10)
+    last = data.iloc[-2]
+    prev_close_time = data.index[-2]
 
     o = float(last["Open"])
     h = float(last["High"])
@@ -25,21 +26,19 @@ try:
     c = float(last["Close"])
 
     body = abs(c - o)
-    if body < 0.05: body = 0.05
-    upper = h - max(o,c)
-    lower = min(o,c) - l
-    up_pct = (upper/body)*100
-    low_pct = (lower/body)*100
+    if body < 0.05:
+        body = 0.05
+    upper = h - max(o, c)
+    lower = min(o, c) - l
+    up_pct = (upper / body) * 100
+    low_pct = (lower / body) * 100
 
     buy_wickless = low_pct < 10 and c > o
     sell_wickless = up_pct < 10 and c < o
 
-    # Times: Yahoo is UTC
     utc_dt = prev_close_time.to_pydatetime().replace(tzinfo=timezone.utc)
-    exness_dt = utc_dt # Exness = GMT+0 = UTC
+    exness_str = utc_dt.strftime("%Y-%m-%d %H:%M Exness")
     sa_dt = utc_dt + timedelta(hours=2)
-
-    exness_str = exness_dt.strftime("%Y-%m-%d %H:%M Exness")
     sa_str = sa_dt.strftime("%Y-%m-%d %H:%M SAST")
 
     details = f"{exness_str}\n{sa_str}\nO:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f}\nUp:{up_pct:.1f}% Low:{low_pct:.1f}%"
